@@ -151,7 +151,7 @@ export default function SettingsPage() {
 
     return (
         <div className="settings-page">
-            <h1>⚙️ Settings <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--accent-primary)', verticalAlign: 'middle' }}>v0.2</span></h1>
+            <h1>⚙️ Settings <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--accent-primary)', verticalAlign: 'middle' }}>v0.3</span></h1>
 
             <div className="settings-tabs">
                 {TABS.map((tab) => (

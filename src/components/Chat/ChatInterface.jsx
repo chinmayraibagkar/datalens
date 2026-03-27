@@ -84,6 +84,9 @@ export default function ChatInterface() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let receivedResult = false;
+        let prevStatusMsg = ''; // Track outside the read loop to persist across chunks
+        let currentEvent = '';  // Track outside the read loop to persist across chunk boundaries
 
         try {
             while (true) {
@@ -93,9 +96,6 @@ export default function ChatInterface() {
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
-
-                let currentEvent = '';
-                let prevStatusMsg = ''; // Track outside React to avoid batching duplication
 
                 for (const line of lines) {
                     if (line.startsWith('event: ')) {
@@ -121,6 +121,7 @@ export default function ChatInterface() {
                                     setAgentCurrentStatus(data.message);
                                 }
                             } else if (currentEvent === 'result') {
+                                receivedResult = true;
                                 // Final result received
                                 const assistantMessage = {
                                     role: 'assistant',
@@ -149,6 +150,7 @@ export default function ChatInterface() {
                                     });
                                 }
                             } else if (currentEvent === 'error') {
+                                receivedResult = true;
                                 addMessage(convId, {
                                     role: 'assistant',
                                     content: `**Error:** ${data.message}`,
@@ -161,8 +163,8 @@ export default function ChatInterface() {
                             } else if (currentEvent === 'done') {
                                 // Stream ended
                             }
-                        } catch {
-                            // Invalid JSON, skip
+                        } catch (parseErr) {
+                            console.error('SSE JSON parse error:', parseErr.message, 'Raw failing string:', dataStr.substring(0, 200) + '...');
                         }
                         currentEvent = '';
                     }
@@ -170,6 +172,19 @@ export default function ChatInterface() {
             }
         } finally {
             reader.releaseLock();
+        }
+
+        // If the stream ended without ever sending a result or error, show a fallback message
+        if (!receivedResult) {
+            addMessage(convId, {
+                role: 'assistant',
+                content: '**Error:** The agent stream ended unexpectedly without returning a result. This may be caused by a tool execution timeout or a server-side error. Please try again.',
+                isError: true,
+                model: selectedModel,
+                provider: selectedProvider,
+                usage: { inputTokens: 0, outputTokens: 0 },
+                timestamp: new Date().toISOString(),
+            });
         }
     };
 

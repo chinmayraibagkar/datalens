@@ -177,7 +177,7 @@ const META_ADS_TOOLS = [
     },
 ];
 
-const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_ITERATIONS = 15;
 
 // Status message mapping for tool calls
 function getToolStatusMessage(toolName, args) {
@@ -356,6 +356,41 @@ async function executeTool(toolName, args, { bqAccessToken, bqProjectId, googleA
     return { error: `Unknown tool: ${toolName}` };
 }
 
+// Truncate tool results to prevent context overflow while preserving enough data for good analysis
+function truncateToolResult(result) {
+    const MAX_ROWS = 5000;
+
+    // If the result has standard rows/columns (BQ style), truncate rows
+    if (result.rows && Array.isArray(result.rows)) {
+        const truncated = { ...result };
+        if (truncated.rows.length > MAX_ROWS) {
+            truncated.totalRows = truncated.rows.length;
+            truncated.rows = truncated.rows.slice(0, MAX_ROWS);
+            truncated.truncated = true;
+        }
+        return truncated;
+    }
+
+    // For Ads API results (campaigns, insights, ads, adSets, etc.)
+    // Find the array key and truncate
+    const copy = { ...result };
+    for (const key of Object.keys(copy)) {
+        if (Array.isArray(copy[key]) && copy[key].length > MAX_ROWS) {
+            copy[`total_${key}`] = copy[key].length;
+            copy[key] = copy[key].slice(0, MAX_ROWS);
+            copy.truncated = true;
+        }
+    }
+
+    // Final safety: if the serialized result is dangerously massive for LLM context, hard-truncate
+    const serialized = JSON.stringify(copy);
+    if (serialized.length > 500000) { // 500KB limit
+        return { summary: serialized.slice(0, 499000), truncated: true, originalLength: serialized.length };
+    }
+
+    return copy;
+}
+
 
 // SSE helper: write an event to the stream
 function writeSSE(controller, encoder, event, data) {
@@ -450,13 +485,37 @@ export async function POST(req) {
 
                         while (iteration < MAX_TOOL_ITERATIONS) {
                             iteration++;
+                            console.log(`[AGENT] Iteration ${iteration}, messages: ${currentMessages.length}, totalChars: ${JSON.stringify(currentMessages).length}`);
 
-                            const response = await chatWithTools({
-                                ...llmConfig,
-                                messages: currentMessages,
-                                systemPrompt,
-                                tools: allTools,
+                            // Send a keep-alive status before starting LLM call
+                            writeSSE(controller, encoder, 'status', {
+                                step: 'analyzing',
+                                message: `⏳ Analyzing data (step ${iteration})...`,
                             });
+
+                            // Heartbeat: send tiny SSE pings every 8s to prevent browser idle timeout
+                            const heartbeat = setInterval(() => {
+                                try {
+                                    writeSSE(controller, encoder, 'status', {
+                                        step: 'analyzing',
+                                        message: `⏳ Still processing (step ${iteration})...`,
+                                    });
+                                } catch (_) {}
+                            }, 8000);
+
+                            let response;
+                            try {
+                                response = await chatWithTools({
+                                    ...llmConfig,
+                                    messages: currentMessages,
+                                    systemPrompt,
+                                    tools: allTools,
+                                });
+                            } finally {
+                                clearInterval(heartbeat);
+                            }
+
+                            console.log(`[AGENT] Response received: toolCalls=${response.toolCalls?.length || 0}, contentLen=${response.content?.length || 0}, input=${response.usage?.inputTokens}, output=${response.usage?.outputTokens}`);
 
                             totalInputTokens += response.usage?.inputTokens || 0;
                             totalOutputTokens += response.usage?.outputTokens || 0;
@@ -550,7 +609,7 @@ export async function POST(req) {
                                         adsResults.push({
                                             tool: tc.name,
                                             arguments: tc.arguments,
-                                            data: toolResult,
+                                            data: toolResult, // Full untruncated data for CSV download
                                         });
                                     }
                                 }
@@ -580,6 +639,44 @@ export async function POST(req) {
                             }
 
                             currentMessages = updatedMessages;
+                        }
+
+                        // ========================================
+                        // FALLBACK: Force generation if we hit MAX_TOOL_ITERATIONS
+                        // ========================================
+                        if (!finalText && currentMessages.length > messages.length) {
+                            writeSSE(controller, encoder, 'status', {
+                                step: 'analyzing',
+                                message: '✍️ Finalizing analysis...',
+                            });
+
+                            const fallbackHeartbeat = setInterval(() => {
+                                try {
+                                    writeSSE(controller, encoder, 'status', {
+                                        step: 'analyzing',
+                                        message: '⏳ Still finalizing...',
+                                    });
+                                } catch (_) {}
+                            }, 8000);
+
+                            try {
+                                const finalResponse = await chatWithModel({
+                                    ...llmConfig,
+                                    messages: currentMessages,
+                                    systemPrompt: systemPrompt + '\n\nCRITICAL INSTRUCTION: You MUST provide a final text summary of the data you have collected. Do not use any more tools.',
+                                });
+                                totalInputTokens += finalResponse.usage?.inputTokens || 0;
+                                totalOutputTokens += finalResponse.usage?.outputTokens || 0;
+                                const parsed = parseAgentResponse(finalResponse.content);
+                                finalText = parsed.text || finalResponse.content || 'I have gathered the data but was unable to generate a summary.';
+                                finalVisualization = parsed.visualization || null;
+                                if (parsed.sql && !lastSql) lastSql = parsed.sql;
+                            } catch (fallbackErr) {
+                                console.error('Fallback generation failed:', fallbackErr);
+                                finalText = 'I gathered the requested data, but encountered an error while generating the final summary.';
+                            } finally {
+                                clearInterval(fallbackHeartbeat);
+                            }
                         }
 
                         // ========================================
@@ -633,6 +730,17 @@ Requirements:
                             }
                         }
 
+                        // Truncate adsResults for SSE (keep full data for CSV export)
+                        const adsResultsForSSE = adsResults.length > 0
+                            ? adsResults.map(ar => ({
+                                tool: ar.tool,
+                                arguments: ar.arguments,
+                                data: truncateToolResult(ar.data),
+                            }))
+                            : null;
+
+                        console.log(`[AGENT] Sending result: textLen=${finalText.length}, adsResults=${adsResults.length}, ssePayloadSize=${JSON.stringify(adsResultsForSSE || []).length}`);
+
                         // Send the final result
                         writeSSE(controller, encoder, 'result', {
                             text: finalText,
@@ -642,7 +750,7 @@ Requirements:
                             sqlResult: lastSqlResult,
                             sqlError: lastSqlError,
                             toolCalls: toolCallsLog,
-                            adsResults: adsResults.length > 0 ? adsResults : null,
+                            adsResults: adsResultsForSSE,
                             usage: {
                                 inputTokens: totalInputTokens,
                                 outputTokens: totalOutputTokens,
@@ -729,10 +837,16 @@ Requirements:
                     // Signal stream end
                     writeSSE(controller, encoder, 'done', {});
                 } catch (error) {
-                    console.error('SSE stream error:', error);
-                    writeSSE(controller, encoder, 'error', { message: error.message });
+                    console.error('SSE stream error:', error?.message, error?.stack);
+                    try {
+                        writeSSE(controller, encoder, 'error', {
+                            message: error?.message || 'Unknown server error during agent execution.',
+                        });
+                    } catch (writeErr) {
+                        console.error('Failed to write SSE error event:', writeErr?.message);
+                    }
                 } finally {
-                    controller.close();
+                    try { controller.close(); } catch (_) { }
                 }
             },
         });
@@ -853,33 +967,4 @@ function unescapeJsonString(s) {
     } catch {
         return s.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
     }
-}
-
-
-// Truncate large tool results to avoid blowing up context
-function truncateToolResult(result) {
-    if (result.rows && result.rows.length > 200) {
-        // Compute summary stats for numeric columns
-        const summaryStats = {};
-        if (result.columns) {
-            for (const col of result.columns) {
-                const values = result.rows.map(r => Number(r[col.name])).filter(v => !isNaN(v));
-                if (values.length > 0) {
-                    summaryStats[col.name] = {
-                        min: Math.min(...values),
-                        max: Math.max(...values),
-                        avg: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100,
-                    };
-                }
-            }
-        }
-        return {
-            ...result,
-            rows: result.rows.slice(0, 200),
-            _truncated: true,
-            _originalRowCount: result.rows.length,
-            _summaryStats: Object.keys(summaryStats).length > 0 ? summaryStats : undefined,
-        };
-    }
-    return result;
 }

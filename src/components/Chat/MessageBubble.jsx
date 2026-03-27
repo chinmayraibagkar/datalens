@@ -141,10 +141,7 @@ export default function MessageBubble({ message, index, onVizRetry }) {
 
                 {/* Text content */}
                 {message.content && (
-                    <div
-                        className="message-content"
-                        dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-                    />
+                    <MessageContent text={message.content} />
                 )}
 
                 {/* Ads Data Tables */}
@@ -440,101 +437,286 @@ function AdsDataBlock({ adsResults }) {
     );
 }
 
-// Markdown renderer with support for headers (h1–h4), bold, italic, code,
-// bullet lists (* and -), numbered lists, and proper list grouping.
-function renderMarkdown(text) {
-    if (!text) return '';
+// ─── Markdown Rendering ─────────────────────────────────────────────
+// Splits content into segments: { type: 'html', content } or { type: 'table', headers, aligns, rows }
+function parseMarkdownSegments(text) {
+    if (!text) return [];
 
-    // Unescape escaped chars from JSON
+    // Unescape JSON-escaped characters including escaped asterisks
     let src = text
         .replace(/\\n/g, '\n')
         .replace(/\\t/g, '\t')
-        .replace(/\\"/g, '"');
+        .replace(/\\"/g, '"')
+        .replace(/\\\*/g, '\u2731'); // Preserve escaped asterisks as placeholder
 
     // Fenced code blocks → <pre><code>
     src = src.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>');
 
-    // Process line-by-line for block elements
     const lines = src.split('\n');
-    const out = [];
+    const segments = [];
+    let htmlLines = [];
     let inList = false;
+
+    const flushHtml = () => {
+        if (htmlLines.length > 0) {
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            segments.push({ type: 'html', content: htmlLines.join('\n') });
+            htmlLines = [];
+        }
+    };
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
 
-        // Skip lines inside <pre> blocks (already handled)
+        // Skip lines inside <pre> blocks
         if (line.includes('<pre>')) {
-            // Pass through pre blocks unchanged
             let j = i;
             while (j < lines.length && !lines[j].includes('</pre>')) {
-                out.push(lines[j]);
+                htmlLines.push(lines[j]);
                 j++;
             }
-            if (j < lines.length) out.push(lines[j]);
+            if (j < lines.length) htmlLines.push(lines[j]);
             i = j;
             continue;
         }
 
-        // Headers (#### before ###, order matters)
+        // ── Markdown Table Detection ──
+        if (/^\|(.+)\|$/.test(line.trim()) && i + 1 < lines.length && /^\|[\s:]*-{2,}[\s:]*\|/.test(lines[i + 1].trim())) {
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            flushHtml();
+
+            const headerCells = line.trim().slice(1, -1).split('|').map(c => applyInline(c.trim()));
+            const sepCells = lines[i + 1].trim().slice(1, -1).split('|').map(c => c.trim());
+            const aligns = sepCells.map(s => {
+                if (s.startsWith(':') && s.endsWith(':')) return 'center';
+                if (s.endsWith(':')) return 'right';
+                return 'left';
+            });
+
+            const rows = [];
+            let j = i + 2;
+            while (j < lines.length && /^\|(.+)\|$/.test(lines[j].trim())) {
+                const cells = lines[j].trim().slice(1, -1).split('|').map(c => applyInline(c.trim()));
+                rows.push(cells);
+                j++;
+            }
+
+            segments.push({ type: 'table', headers: headerCells, aligns, rows });
+            i = j - 1;
+            continue;
+        }
+
+        // ── Horizontal Rule ──
+        if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line.trim())) {
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            htmlLines.push('<hr class="md-hr">');
+            continue;
+        }
+
+        // Headers
         if (/^#{4}\s+/.test(line)) {
-            if (inList) { out.push('</ul>'); inList = false; }
-            out.push(line.replace(/^#{4}\s+(.+)$/, '<h4>$1</h4>'));
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            htmlLines.push(line.replace(/^#{4}\s+(.+)$/, (_, g) => `<h4>${applyInline(g)}</h4>`));
             continue;
         }
         if (/^#{3}\s+/.test(line)) {
-            if (inList) { out.push('</ul>'); inList = false; }
-            out.push(line.replace(/^#{3}\s+(.+)$/, '<h3>$1</h3>'));
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            htmlLines.push(line.replace(/^#{3}\s+(.+)$/, (_, g) => `<h3>${applyInline(g)}</h3>`));
             continue;
         }
         if (/^#{2}\s+/.test(line)) {
-            if (inList) { out.push('</ul>'); inList = false; }
-            out.push(line.replace(/^#{2}\s+(.+)$/, '<h2>$1</h2>'));
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            htmlLines.push(line.replace(/^#{2}\s+(.+)$/, (_, g) => `<h2>${applyInline(g)}</h2>`));
             continue;
         }
         if (/^#{1}\s+/.test(line)) {
-            if (inList) { out.push('</ul>'); inList = false; }
-            out.push(line.replace(/^#{1}\s+(.+)$/, '<h1>$1</h1>'));
+            if (inList) { htmlLines.push('</ul>'); inList = false; }
+            htmlLines.push(line.replace(/^#{1}\s+(.+)$/, (_, g) => `<h1>${applyInline(g)}</h1>`));
             continue;
         }
 
-        // Bullet lists: *, -, or numbered (1.)
+        // Bullet lists
         const bulletMatch = line.match(/^(\s*)[\*\-]\s+(.+)$/);
         const numMatch = !bulletMatch && line.match(/^(\s*)\d+\.\s+(.+)$/);
         if (bulletMatch || numMatch) {
-            if (!inList) { out.push('<ul>'); inList = true; }
+            if (!inList) { htmlLines.push('<ul>'); inList = true; }
             const content = bulletMatch ? bulletMatch[2] : numMatch[2];
             const indent = (bulletMatch ? bulletMatch[1] : numMatch[1]).length;
             const cls = indent > 0 ? ' class="nested"' : '';
-            out.push(`<li${cls}>${applyInline(content)}</li>`);
+            htmlLines.push(`<li${cls}>${applyInline(content)}</li>`);
             continue;
         }
 
-        // Close list if we hit a non-list line
         if (inList && line.trim() !== '') {
-            out.push('</ul>');
+            htmlLines.push('</ul>');
             inList = false;
         }
 
-        // Empty line → paragraph break
         if (line.trim() === '') {
-            out.push('<br>');
+            htmlLines.push('<br>');
             continue;
         }
 
-        // Regular line
-        out.push(`<p>${applyInline(line)}</p>`);
+        htmlLines.push(`<p>${applyInline(line)}</p>`);
     }
 
-    if (inList) out.push('</ul>');
-
-    return out.join('\n');
+    if (inList) htmlLines.push('</ul>');
+    flushHtml();
+    return segments;
 }
 
 // Apply inline formatting: bold, italic, inline code
 function applyInline(text) {
     return text
+        // Inline code first (protect from bold/italic processing)
         .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+        // Bold: **text** or __text__
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+        // Italic: *text* (not preceded/followed by *)
+        .replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
+        // Italic: _text_ (must be surrounded by word boundaries or space, not inside words like foo_bar)
+        .replace(/(^|\s)_(?!_)([^\s_][^_]*[^\s_]|[^_])_(?!\S)/g, '$1<em>$2</em>')
+        // Restore escaped asterisks
+        .replace(/\u2731/g, '*');
+}
+
+// ─── Interactive Table Component ────────────────────────────────────
+function InteractiveTable({ headers, aligns, rows }) {
+    const [sortCol, setSortCol] = useState(null);
+    const [sortDir, setSortDir] = useState('asc');
+    const [colWidths, setColWidths] = useState({});
+    const [resizing, setResizing] = useState(null);
+    const tableRef = useRef(null);
+
+    const sortedRows = useCallback(() => {
+        if (sortCol === null) return rows;
+        const copy = [...rows];
+        copy.sort((a, b) => {
+            const va = a[sortCol] || '';
+            const vb = b[sortCol] || '';
+            const sa = va.replace(/<[^>]+>/g, '').trim();
+            const sb = vb.replace(/<[^>]+>/g, '').trim();
+            const na = parseFloat(sa.replace(/[₹,]/g, ''));
+            const nb = parseFloat(sb.replace(/[₹,]/g, ''));
+            if (!isNaN(na) && !isNaN(nb)) {
+                return sortDir === 'asc' ? na - nb : nb - na;
+            }
+            return sortDir === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
+        });
+        return copy;
+    }, [rows, sortCol, sortDir]);
+
+    const handleSort = (colIdx) => {
+        if (sortCol === colIdx) {
+            setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortCol(colIdx);
+            setSortDir('asc');
+        }
+    };
+
+    const handleResizeStart = useCallback((e, colIdx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const th = e.target.closest('th');
+        const startWidth = th.offsetWidth;
+
+        const onMove = (ev) => {
+            const diff = ev.clientX - startX;
+            setColWidths(prev => ({ ...prev, [colIdx]: Math.max(60, startWidth + diff) }));
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            setResizing(null);
+        };
+
+        setResizing(colIdx);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }, []);
+
+    const displayRows = sortedRows();
+
+    return (
+        <div className="md-table-wrapper" ref={tableRef}>
+            <table className="md-table" style={{ tableLayout: Object.keys(colWidths).length > 0 ? 'fixed' : 'auto' }}>
+                <thead>
+                    <tr>
+                        {headers.map((header, ci) => (
+                            <th
+                                key={ci}
+                                style={{
+                                    textAlign: aligns[ci] || 'left',
+                                    width: colWidths[ci] ? `${colWidths[ci]}px` : undefined,
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    position: 'relative',
+                                }}
+                                onClick={() => handleSort(ci)}
+                            >
+                                <span className="md-th-content">
+                                    <span dangerouslySetInnerHTML={{ __html: header }} />
+                                    <span className="md-sort-icon">
+                                        {sortCol === ci ? (sortDir === 'asc' ? '↑' : '↓') : '⇅'}
+                                    </span>
+                                </span>
+                                <span
+                                    className={`md-resize-handle ${resizing === ci ? 'active' : ''}`}
+                                    onMouseDown={(e) => handleResizeStart(e, ci)}
+                                />
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {displayRows.map((row, ri) => (
+                        <tr key={ri}>
+                            {row.map((cell, ci) => (
+                                <td
+                                    key={ci}
+                                    style={{ textAlign: aligns[ci] || 'left' }}
+                                    dangerouslySetInnerHTML={{ __html: cell }}
+                                />
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            {rows.length > 0 && (
+                <div className="md-table-footer">
+                    {rows.length} row{rows.length !== 1 ? 's' : ''}
+                    {sortCol !== null && ` · Sorted by ${(headers[sortCol] || '').replace(/<[^>]+>/g, '')} ${sortDir === 'asc' ? '↑' : '↓'}`}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Render message content as React elements ───────────────────────
+function MessageContent({ text }) {
+    const segments = parseMarkdownSegments(text);
+
+    return (
+        <div className="message-content">
+            {segments.map((seg, i) => {
+                if (seg.type === 'table') {
+                    return (
+                        <InteractiveTable
+                            key={i}
+                            headers={seg.headers}
+                            aligns={seg.aligns}
+                            rows={seg.rows}
+                        />
+                    );
+                }
+                return (
+                    <div key={i} dangerouslySetInnerHTML={{ __html: seg.content }} />
+                );
+            })}
+        </div>
+    );
 }
 
