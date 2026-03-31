@@ -13,6 +13,7 @@ export async function POST(req) {
         switch (action) {
             case 'test': {
                 const result = await executeGoogleAdsTool('google_ads_list_customers', {}, config);
+                console.log('Google Ads test result:', JSON.stringify(result, null, 2));
                 if (result.error) {
                     return NextResponse.json({ success: false, error: result.error });
                 }
@@ -28,14 +29,7 @@ export async function POST(req) {
                 if (result.error) {
                     return NextResponse.json({ error: result.error }, { status: 500 });
                 }
-                // Normalize the response
-                const rawCustomers = result.customers || result.data || result;
-                const customers = Array.isArray(rawCustomers) 
-                    ? rawCustomers.map(c => ({
-                        id: c.id || c.customerId || c,
-                        name: c.name || c.descriptive_name || c.id || c,
-                    }))
-                    : [{ id: String(rawCustomers), name: String(rawCustomers) }];
+                const customers = result.customers || [];
                 return NextResponse.json({ customers });
             }
 
@@ -48,7 +42,7 @@ export async function POST(req) {
                 return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
         }
     } catch (error) {
-        console.error('Google Ads API error:', error);
+        console.error('Google Ads API error:', error.message, error.stack);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

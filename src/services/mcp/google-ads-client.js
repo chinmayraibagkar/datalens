@@ -1,7 +1,7 @@
 // Google Ads client — uses REST API via Google Ads API directly
 // This avoids child_process issues with Next.js bundling
 
-const GOOGLE_ADS_API_VERSION = 'v18';
+const GOOGLE_ADS_API_VERSION = 'v23';
 const GOOGLE_ADS_BASE_URL = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 async function getAccessToken(config) {
@@ -74,6 +74,7 @@ export async function executeGoogleAdsTool(toolName, args, config) {
             }
 
             case 'google_ads_list_customers': {
+                // Step 1: Get all accessible top-level customer IDs
                 const res = await fetch(
                     `${GOOGLE_ADS_BASE_URL}/customers:listAccessibleCustomers`,
                     { headers }
@@ -85,11 +86,82 @@ export async function executeGoogleAdsTool(toolName, args, config) {
                 }
 
                 const data = await res.json();
-                const customerIds = (data.resourceNames || []).map(rn => {
-                    const id = rn.split('/').pop();
-                    return { id, name: `Account ${id}` };
+                const topLevelIds = (data.resourceNames || []).map(rn => rn.split('/').pop());
+
+                // Step 2: For each accessible account, query customer_client to get child accounts
+                const allAccounts = [];
+                const seenIds = new Set();
+
+                for (const mccId of topLevelIds) {
+                    try {
+                        const query = `
+                            SELECT
+                                customer_client.id,
+                                customer_client.descriptive_name,
+                                customer_client.level,
+                                customer_client.manager,
+                                customer_client.status,
+                                customer_client.hidden
+                            FROM customer_client
+                            WHERE customer_client.hidden = FALSE
+                        `;
+
+                        const searchRes = await fetch(
+                            `${GOOGLE_ADS_BASE_URL}/customers/${mccId}/googleAds:searchStream`,
+                            {
+                                method: 'POST',
+                                headers,
+                                body: JSON.stringify({ query: query.trim() }),
+                            }
+                        );
+
+                        if (!searchRes.ok) {
+                            // This account might not be a manager — just add it as-is
+                            if (!seenIds.has(mccId)) {
+                                seenIds.add(mccId);
+                                allAccounts.push({ id: mccId, name: `Account ${mccId}`, isManager: false });
+                            }
+                            continue;
+                        }
+
+                        const searchData = await searchRes.json();
+                        // searchStream returns array of result batches
+                        if (Array.isArray(searchData)) {
+                            for (const batch of searchData) {
+                                for (const row of (batch.results || [])) {
+                                    const client = row.customerClient;
+                                    if (!client) continue;
+                                    const clientId = String(client.id);
+                                    if (seenIds.has(clientId)) continue;
+                                    seenIds.add(clientId);
+                                    allAccounts.push({
+                                        id: clientId,
+                                        name: client.descriptiveName || `Account ${clientId}`,
+                                        isManager: client.manager || false,
+                                        level: client.level || 0,
+                                        status: client.status || 'UNKNOWN',
+                                        parentMcc: mccId,
+                                    });
+                                }
+                            }
+                        }
+                    } catch (childErr) {
+                        console.error(`Failed to fetch child accounts for ${mccId}:`, childErr.message);
+                        // Still add the MCC if we haven't
+                        if (!seenIds.has(mccId)) {
+                            seenIds.add(mccId);
+                            allAccounts.push({ id: mccId, name: `Account ${mccId}`, isManager: true });
+                        }
+                    }
+                }
+
+                // Sort: managers first, then by name
+                allAccounts.sort((a, b) => {
+                    if (a.isManager !== b.isManager) return a.isManager ? -1 : 1;
+                    return (a.name || '').localeCompare(b.name || '');
                 });
-                return { customers: customerIds };
+
+                return { customers: allAccounts };
             }
 
             default:

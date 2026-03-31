@@ -150,14 +150,20 @@ export default function AdsAccountSelector({ open, onClose }) {
                                                         key={acc.id} 
                                                         className={`table-item ${isSelected ? 'selected' : ''}`}
                                                         onClick={() => toggleGoogleAccount(acc.id)}
+                                                        style={acc.isManager ? {} : { paddingLeft: '36px' }}
                                                     >
                                                         <input
                                                             type="checkbox"
                                                             checked={isSelected}
                                                             onChange={() => {}}
                                                         />
-                                                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                                            <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{acc.name || acc.id}</span>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{acc.name || acc.id}</span>
+                                                                {acc.isManager && (
+                                                                    <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '3px', background: 'rgba(139, 92, 246, 0.2)', color: 'var(--accent-primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>MCC</span>
+                                                                )}
+                                                            </div>
                                                             {acc.name !== acc.id && (
                                                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{acc.id}</span>
                                                             )}

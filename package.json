@@ -1,6 +1,6 @@
 {
-  "name": "datalens-v0.2",
-  "version": "0.2.0",
+  "name": "datalens-v0.4",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
