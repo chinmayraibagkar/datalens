@@ -505,7 +505,7 @@ export async function POST(req) {
             selectedMetaAdsAccounts: selectedMetaAdsAccounts || [],
         });
 
-        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'local-server', 'ollama'].includes(provider);
+        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'openrouter', 'local-server', 'ollama'].includes(provider);
         const bqConnected = bqAccessToken && bqProjectId;
         const googleAdsConnected = googleAdsConfig?.enabled && googleAdsConfig?.refreshToken;
         const metaAdsConnected = metaAdsConfig?.enabled && metaAdsConfig?.accessToken;

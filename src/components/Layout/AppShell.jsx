@@ -47,7 +47,7 @@ export default function AppShell({ children }) {
                     <div className="sidebar-brand">
                         <div className="sidebar-brand-icon">◈</div>
                         <h1>DataLens AI</h1>
-                        <span style={{ fontSize: '0.6rem', fontWeight: 500, background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginLeft: '4px', letterSpacing: '0.04em' }}>v0.4</span>
+                        <span style={{ fontSize: '0.6rem', fontWeight: 500, background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginLeft: '4px', letterSpacing: '0.04em' }}>v0.5</span>
                     </div>
                     <button className="new-chat-btn" onClick={handleNewChat}>
                         <HiOutlinePlus size={16} /> New Chat

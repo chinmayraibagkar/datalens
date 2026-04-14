@@ -5,6 +5,7 @@ import { chatOpenAI } from './providers/openai';
 import { chatGrok } from './providers/grok';
 import { chatOllama, chatOllamaWithTools } from './providers/ollama';
 import { chatLocalServer, chatLocalServerWithTools } from './providers/local-server';
+import { chatOpenRouter, chatOpenRouterWithTools } from './providers/openrouter';
 
 export async function chatWithModel({
     provider,
@@ -26,6 +27,8 @@ export async function chatWithModel({
             return chatOpenAI({ model, messages, systemPrompt, apiKey, thinking, temperature });
         case 'grok':
             return chatGrok({ model, messages, systemPrompt, apiKey, thinking, temperature });
+        case 'openrouter':
+            return chatOpenRouter({ model, messages, systemPrompt, apiKey, thinking, temperature });
         case 'ollama':
             return chatOllama({
                 model,
@@ -65,6 +68,8 @@ export async function chatWithTools({
             return chatAnthropicWithTools({ model, messages, systemPrompt, apiKey, thinking, tools });
         case 'openai':
             return chatOpenAIWithTools({ model, messages, systemPrompt, apiKey, thinking, tools });
+        case 'openrouter':
+            return chatOpenRouterWithTools({ model, messages, systemPrompt, apiKey, thinking, tools, temperature });
         case 'ollama':
             return chatOllamaWithTools({
                 model,

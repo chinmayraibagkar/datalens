@@ -34,6 +34,7 @@ export default function ChatInterface() {
         ollamaBaseUrl,
         localServerUrl,
         ollamaModels,
+        openRouterModels,
         bqProjectId,
         selectedTables,
         tableSchemas,
@@ -50,7 +51,8 @@ export default function ChatInterface() {
     } = useAppStore();
 
     const conv = getActiveConversation();
-    const currentModel = getModelById(selectedModel, ollamaModels);
+    const allExtraModels = [...ollamaModels, ...openRouterModels];
+    const currentModel = getModelById(selectedModel, allExtraModels);
 
     const availableModels = useCallback(() => {
         const models = [];
@@ -58,10 +60,11 @@ export default function ChatInterface() {
         if (apiKeys.anthropic) models.push(...getModelsByProvider('anthropic'));
         if (apiKeys.openai) models.push(...getModelsByProvider('openai'));
         if (apiKeys.grok) models.push(...getModelsByProvider('grok'));
+        if (apiKeys.openrouter && openRouterModels.length > 0) models.push(...openRouterModels);
         if (ollamaModels.length > 0) models.push(...ollamaModels);
         models.push(...getModelsByProvider('local-server'));
         return models;
-    }, [apiKeys, ollamaModels]);
+    }, [apiKeys, ollamaModels, openRouterModels]);
 
     // Auto-correct selected model if it doesn't exist in available models
     // This fixes the visual desync where the dropdown shows one model but the
@@ -475,7 +478,7 @@ export default function ChatInterface() {
                             className="model-select"
                             value={selectedModel}
                             onChange={(e) => {
-                                const m = getModelById(e.target.value) || models.find((x) => x.id === e.target.value);
+                                const m = getModelById(e.target.value, allExtraModels) || models.find((x) => x.id === e.target.value);
                                 if (m) setSelectedModel(m.id, m.provider);
                             }}
                         >
@@ -483,7 +486,9 @@ export default function ChatInterface() {
                                 const provModels =
                                     key === 'ollama'
                                         ? ollamaModels
-                                        : models.filter((m) => m.provider === key);
+                                        : key === 'openrouter'
+                                            ? openRouterModels
+                                            : models.filter((m) => m.provider === key);
                                 if (provModels.length === 0) return null;
                                 return (
                                     <optgroup key={key} label={`${prov.icon} ${prov.name}`}>

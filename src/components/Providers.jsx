@@ -3,6 +3,7 @@ import { SessionProvider } from 'next-auth/react';
 import { useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { Toaster } from 'react-hot-toast';
+import AuthGuard from '@/components/Auth/AuthGuard';
 
 export function Providers({ children }) {
     const theme = useAppStore((s) => s.theme);
@@ -25,7 +26,7 @@ export function Providers({ children }) {
                     },
                 }}
             />
-            {children}
+            <AuthGuard>{children}</AuthGuard>
         </SessionProvider>
     );
 }

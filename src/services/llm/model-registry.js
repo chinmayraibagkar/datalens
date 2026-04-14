@@ -8,6 +8,7 @@ export const MODEL_PROVIDERS = {
   anthropic: { name: 'Anthropic Claude', icon: '◈', color: '#D97706' },
   openai: { name: 'OpenAI', icon: '◉', color: '#10A37F' },
   grok: { name: 'xAI Grok', icon: '⚡', color: '#1DA1F2' },
+  openrouter: { name: 'OpenRouter', icon: '🌐', color: '#FF6B35' },
   ollama: { name: 'Ollama (Local)', icon: '🦙', color: '#808080' },
   'local-server': { name: 'Local Server', icon: '🖥️', color: '#9333EA' },
 };
@@ -219,8 +220,8 @@ export function getModelsByProvider(provider) {
   return MODELS.filter((m) => m.provider === provider);
 }
 
-export function calculateCost(modelId, inputTokens, outputTokens) {
-  const model = getModelById(modelId);
+export function calculateCost(modelId, inputTokens, outputTokens, extraModels = []) {
+  const model = getModelById(modelId, extraModels);
   if (!model || model.isLocal) return 0;
   const inputCost = (inputTokens / 1_000_000) * model.inputPricePerMillion_INR;
   const outputCost = (outputTokens / 1_000_000) * model.outputPricePerMillion_INR;

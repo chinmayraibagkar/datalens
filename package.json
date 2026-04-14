@@ -1,6 +1,6 @@
 {
-  "name": "datalens-v0.4",
-  "version": "0.4.0",
+  "name": "datalens-v0.5",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "firebase": "^12.12.0",
     "next": "16.1.6",
     "next-auth": "^4.24.13",
     "react": "19.2.3",
