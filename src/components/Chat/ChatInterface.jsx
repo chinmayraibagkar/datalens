@@ -50,7 +50,7 @@ export default function ChatInterface() {
     } = useAppStore();
 
     const conv = getActiveConversation();
-    const currentModel = getModelById(selectedModel);
+    const currentModel = getModelById(selectedModel, ollamaModels);
 
     const availableModels = useCallback(() => {
         const models = [];
@@ -62,6 +62,21 @@ export default function ChatInterface() {
         models.push(...getModelsByProvider('local-server'));
         return models;
     }, [apiKeys, ollamaModels]);
+
+    // Auto-correct selected model if it doesn't exist in available models
+    // This fixes the visual desync where the dropdown shows one model but the
+    // store holds a different (unavailable) model/provider
+    useEffect(() => {
+        const models = availableModels();
+        if (models.length === 0) return;
+        const found = models.find((m) => m.id === selectedModel);
+        if (!found) {
+            // Current selection is not in the available list — pick the first available
+            const first = models[0];
+            console.log(`[Auto-correct] Model "${selectedModel}" not found in available models. Switching to "${first.id}" (${first.provider})`);
+            setSelectedModel(first.id, first.provider);
+        }
+    }, [selectedModel, availableModels, setSelectedModel]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

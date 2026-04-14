@@ -24,6 +24,7 @@ export default function AppShell({ children }) {
         theme,
         toggleTheme,
         selectedModel,
+        ollamaModels,
         conversations,
         activeConversationId,
         createConversation,
@@ -31,7 +32,7 @@ export default function AppShell({ children }) {
         deleteConversation,
     } = useAppStore();
 
-    const model = getModelById(selectedModel);
+    const model = getModelById(selectedModel, ollamaModels);
     const provider = model ? MODEL_PROVIDERS[model.provider] : null;
 
     const handleNewChat = () => {

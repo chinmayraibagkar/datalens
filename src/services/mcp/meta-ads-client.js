@@ -1,7 +1,7 @@
 // Meta Ads client — uses Meta Marketing API REST endpoints directly
 // This avoids child_process issues with Next.js bundling
 
-const META_API_VERSION = 'v21.0';
+const META_API_VERSION = 'v23.0';
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
 export async function executeMetaAdsTool(toolName, args, config) {

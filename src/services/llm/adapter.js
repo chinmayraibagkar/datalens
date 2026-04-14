@@ -3,7 +3,7 @@ import { chatGemini, chatGeminiWithTools } from './providers/gemini';
 import { chatAnthropic } from './providers/anthropic';
 import { chatOpenAI } from './providers/openai';
 import { chatGrok } from './providers/grok';
-import { chatOllama } from './providers/ollama';
+import { chatOllama, chatOllamaWithTools } from './providers/ollama';
 import { chatLocalServer, chatLocalServerWithTools } from './providers/local-server';
 
 export async function chatWithModel({
@@ -65,6 +65,14 @@ export async function chatWithTools({
             return chatAnthropicWithTools({ model, messages, systemPrompt, apiKey, thinking, tools });
         case 'openai':
             return chatOpenAIWithTools({ model, messages, systemPrompt, apiKey, thinking, tools });
+        case 'ollama':
+            return chatOllamaWithTools({
+                model,
+                messages,
+                systemPrompt,
+                tools,
+                baseUrl: ollamaBaseUrl || 'http://localhost:11434',
+            });
         case 'local-server':
             return chatLocalServerWithTools({
                 model,

@@ -192,6 +192,7 @@ export const useAppStore = create(
                 systemPrompt: state.systemPrompt,
                 temperature: state.temperature,
                 ollamaBaseUrl: state.ollamaBaseUrl,
+                ollamaModels: state.ollamaModels,
                 localServerUrl: state.localServerUrl,
                 bqProjectId: state.bqProjectId,
                 googleAdsConfig: state.googleAdsConfig,

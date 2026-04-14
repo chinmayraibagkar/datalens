@@ -211,8 +211,8 @@ export const MODELS = [
 ];
 
 // Helper functions
-export function getModelById(id) {
-  return MODELS.find((m) => m.id === id);
+export function getModelById(id, extraModels = []) {
+  return MODELS.find((m) => m.id === id) || extraModels.find((m) => m.id === id);
 }
 
 export function getModelsByProvider(provider) {

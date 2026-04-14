@@ -179,6 +179,65 @@ const META_ADS_TOOLS = [
 
 const MAX_TOOL_ITERATIONS = 15;
 
+// Enforce correct account IDs in tool call arguments.
+// Smaller models (e.g. Ollama Gemma) often hallucinate wrong account IDs
+// even when the correct ones are specified in the system prompt.
+// This function overrides the LLM-generated account_id/object_id/customer_id
+// with the user-selected accounts to guarantee correctness.
+function enforceSelectedAccounts(toolName, args, selectedGoogleAdsAccounts, selectedMetaAdsAccounts) {
+    const corrected = { ...args };
+
+    // Meta Ads tools
+    if (toolName === 'meta_ads_get_campaigns' || toolName === 'meta_ads_get_insights') {
+        const paramKey = toolName === 'meta_ads_get_campaigns' ? 'account_id' : 'object_id';
+        const llmValue = corrected[paramKey];
+
+        if (selectedMetaAdsAccounts?.length > 0) {
+            // If the LLM provided an account_id, check if it's one of the selected ones
+            if (llmValue) {
+                const normalizedLlmValue = llmValue.startsWith('act_') ? llmValue : `act_${llmValue}`;
+                const isCorrectAccount = selectedMetaAdsAccounts.some(id => {
+                    const normalizedId = id.startsWith('act_') ? id : `act_${id}`;
+                    return normalizedId === normalizedLlmValue;
+                });
+                if (!isCorrectAccount) {
+                    // LLM picked the wrong account — override with first selected account
+                    console.log(`[ENFORCE] Meta Ads: LLM used ${llmValue} but selected accounts are [${selectedMetaAdsAccounts.join(', ')}]. Overriding to ${selectedMetaAdsAccounts[0]}`);
+                    corrected[paramKey] = selectedMetaAdsAccounts[0];
+                }
+            } else {
+                // LLM didn't provide an account — use the first selected one
+                console.log(`[ENFORCE] Meta Ads: No account_id provided. Using selected: ${selectedMetaAdsAccounts[0]}`);
+                corrected[paramKey] = selectedMetaAdsAccounts[0];
+            }
+        }
+    }
+
+    // Meta Ads: meta_ads_get_accounts — force user_id to 'me'
+    if (toolName === 'meta_ads_get_accounts') {
+        corrected.user_id = 'me';
+    }
+
+    // Google Ads tools
+    if (toolName === 'google_ads_search') {
+        if (selectedGoogleAdsAccounts?.length > 0) {
+            const llmValue = corrected.customer_id;
+            if (llmValue) {
+                const isCorrect = selectedGoogleAdsAccounts.includes(llmValue);
+                if (!isCorrect) {
+                    console.log(`[ENFORCE] Google Ads: LLM used ${llmValue} but selected accounts are [${selectedGoogleAdsAccounts.join(', ')}]. Overriding to ${selectedGoogleAdsAccounts[0]}`);
+                    corrected.customer_id = selectedGoogleAdsAccounts[0];
+                }
+            } else {
+                console.log(`[ENFORCE] Google Ads: No customer_id provided. Using selected: ${selectedGoogleAdsAccounts[0]}`);
+                corrected.customer_id = selectedGoogleAdsAccounts[0];
+            }
+        }
+    }
+
+    return corrected;
+}
+
 // Status message mapping for tool calls
 function getToolStatusMessage(toolName, args) {
     switch (toolName) {
@@ -428,6 +487,14 @@ export async function POST(req) {
             ollamaBaseUrl, localServerUrl,
         };
 
+        console.log(`[CHAT] Provider: ${provider}, Model: ${model}, HasApiKey: ${!!apiKey}`);
+        if (selectedMetaAdsAccounts?.length > 0) {
+            console.log(`[CHAT] Selected Meta Ads accounts: ${selectedMetaAdsAccounts.join(', ')}`);
+        }
+        if (selectedGoogleAdsAccounts?.length > 0) {
+            console.log(`[CHAT] Selected Google Ads accounts: ${selectedGoogleAdsAccounts.join(', ')}`);
+        }
+
         const toolContext = { bqAccessToken, bqProjectId, googleAdsConfig, metaAdsConfig };
 
         const systemPrompt = buildSystemPrompt({
@@ -438,7 +505,7 @@ export async function POST(req) {
             selectedMetaAdsAccounts: selectedMetaAdsAccounts || [],
         });
 
-        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'local-server'].includes(provider);
+        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'local-server', 'ollama'].includes(provider);
         const bqConnected = bqAccessToken && bqProjectId;
         const googleAdsConnected = googleAdsConfig?.enabled && googleAdsConfig?.refreshToken;
         const metaAdsConnected = metaAdsConfig?.enabled && metaAdsConfig?.accessToken;
@@ -573,24 +640,31 @@ export async function POST(req) {
 
                             // Process tool calls in PARALLEL
                             const toolPromises = response.toolCalls.map(async (tc) => {
+                                // Enforce selected account IDs — override any wrong IDs the LLM hallucinated
+                                const correctedArgs = enforceSelectedAccounts(
+                                    tc.name, tc.arguments,
+                                    selectedGoogleAdsAccounts || [],
+                                    selectedMetaAdsAccounts || []
+                                );
+
                                 writeSSE(controller, encoder, 'status', {
                                     step: 'executing_tool',
-                                    message: getToolStatusMessage(tc.name, tc.arguments),
+                                    message: getToolStatusMessage(tc.name, correctedArgs),
                                     tool: tc.name,
                                 });
 
-                                const toolResult = await executeTool(tc.name, tc.arguments, toolContext);
+                                const toolResult = await executeTool(tc.name, correctedArgs, toolContext);
 
                                 toolCallsLog.push({
                                     name: tc.name,
-                                    arguments: tc.arguments,
+                                    arguments: correctedArgs,
                                     result: toolResult.error
                                         ? { error: toolResult.error }
                                         : { success: true, rowCount: toolResult.rows?.length },
                                 });
 
                                 if (tc.name === 'execute_sql') {
-                                    lastSql = tc.arguments.sql;
+                                    lastSql = correctedArgs.sql;
                                     if (toolResult.error) {
                                         lastSqlError = toolResult.error;
                                     } else {
@@ -608,11 +682,14 @@ export async function POST(req) {
                                     if (!toolResult.error) {
                                         adsResults.push({
                                             tool: tc.name,
-                                            arguments: tc.arguments,
+                                            arguments: correctedArgs,
                                             data: toolResult, // Full untruncated data for CSV download
                                         });
                                     }
                                 }
+
+                                // Update tc.arguments so the LLM sees corrected IDs in conversation history
+                                tc.arguments = correctedArgs;
 
                                 return { tc, toolResult };
                             });
