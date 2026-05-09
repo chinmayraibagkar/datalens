@@ -10,6 +10,7 @@ export const MODEL_PROVIDERS = {
   grok: { name: 'xAI Grok', icon: '⚡', color: '#1DA1F2' },
   openrouter: { name: 'OpenRouter', icon: '🌐', color: '#FF6B35' },
   ollama: { name: 'Ollama (Local)', icon: '🦙', color: '#808080' },
+  lmstudio: { name: 'LM Studio', icon: '🧪', color: '#00D4AA' },
   'local-server': { name: 'Local Server', icon: '🖥️', color: '#9333EA' },
 };
 

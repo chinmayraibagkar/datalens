@@ -471,6 +471,7 @@ export async function POST(req) {
             thinkingEnabled,
             temperature,
             ollamaBaseUrl,
+            lmStudioBaseUrl,
             localServerUrl,
             bqAccessToken,
             bqProjectId,
@@ -484,7 +485,7 @@ export async function POST(req) {
             provider, model, apiKey,
             thinking: thinkingEnabled,
             temperature: temperature ?? 0.7,
-            ollamaBaseUrl, localServerUrl,
+            ollamaBaseUrl, lmStudioBaseUrl, localServerUrl,
         };
 
         console.log(`[CHAT] Provider: ${provider}, Model: ${model}, HasApiKey: ${!!apiKey}`);
@@ -505,7 +506,7 @@ export async function POST(req) {
             selectedMetaAdsAccounts: selectedMetaAdsAccounts || [],
         });
 
-        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'openrouter', 'local-server', 'ollama'].includes(provider);
+        const supportsTools = ['gemini', 'openai', 'anthropic', 'grok', 'openrouter', 'local-server', 'ollama', 'lmstudio'].includes(provider);
         const bqConnected = bqAccessToken && bqProjectId;
         const googleAdsConnected = googleAdsConfig?.enabled && googleAdsConfig?.refreshToken;
         const metaAdsConnected = metaAdsConfig?.enabled && metaAdsConfig?.accessToken;

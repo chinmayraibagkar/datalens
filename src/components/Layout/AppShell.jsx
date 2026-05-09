@@ -25,6 +25,7 @@ export default function AppShell({ children }) {
         toggleTheme,
         selectedModel,
         ollamaModels,
+        lmStudioModels,
         conversations,
         activeConversationId,
         createConversation,
@@ -32,7 +33,7 @@ export default function AppShell({ children }) {
         deleteConversation,
     } = useAppStore();
 
-    const model = getModelById(selectedModel, ollamaModels);
+    const model = getModelById(selectedModel, [...ollamaModels, ...lmStudioModels]);
     const provider = model ? MODEL_PROVIDERS[model.provider] : null;
 
     const handleNewChat = () => {
@@ -47,7 +48,7 @@ export default function AppShell({ children }) {
                     <div className="sidebar-brand">
                         <div className="sidebar-brand-icon">◈</div>
                         <h1>DataLens AI</h1>
-                        <span style={{ fontSize: '0.6rem', fontWeight: 500, background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginLeft: '4px', letterSpacing: '0.04em' }}>v0.5</span>
+                        <span style={{ fontSize: '0.6rem', fontWeight: 500, background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginLeft: '4px', letterSpacing: '0.04em' }}>v0.6</span>
                     </div>
                     <button className="new-chat-btn" onClick={handleNewChat}>
                         <HiOutlinePlus size={16} /> New Chat

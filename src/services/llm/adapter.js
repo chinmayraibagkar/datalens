@@ -4,6 +4,7 @@ import { chatAnthropic } from './providers/anthropic';
 import { chatOpenAI } from './providers/openai';
 import { chatGrok } from './providers/grok';
 import { chatOllama, chatOllamaWithTools } from './providers/ollama';
+import { chatLMStudio, chatLMStudioWithTools } from './providers/lmstudio';
 import { chatLocalServer, chatLocalServerWithTools } from './providers/local-server';
 import { chatOpenRouter, chatOpenRouterWithTools } from './providers/openrouter';
 
@@ -16,6 +17,7 @@ export async function chatWithModel({
     thinking = false,
     temperature,
     ollamaBaseUrl,
+    lmStudioBaseUrl,
     localServerUrl,
 }) {
     switch (provider) {
@@ -35,6 +37,13 @@ export async function chatWithModel({
                 messages,
                 systemPrompt,
                 baseUrl: ollamaBaseUrl || 'http://localhost:11434',
+            });
+        case 'lmstudio':
+            return chatLMStudio({
+                model,
+                messages,
+                systemPrompt,
+                baseUrl: lmStudioBaseUrl || 'http://localhost:1234',
             });
         case 'local-server':
             return chatLocalServer({
@@ -59,6 +68,7 @@ export async function chatWithTools({
     temperature,
     tools = [],
     ollamaBaseUrl,
+    lmStudioBaseUrl,
     localServerUrl,
 }) {
     switch (provider) {
@@ -78,6 +88,14 @@ export async function chatWithTools({
                 tools,
                 baseUrl: ollamaBaseUrl || 'http://localhost:11434',
             });
+        case 'lmstudio':
+            return chatLMStudioWithTools({
+                model,
+                messages,
+                systemPrompt,
+                tools,
+                baseUrl: lmStudioBaseUrl || 'http://localhost:1234',
+            });
         case 'local-server':
             return chatLocalServerWithTools({
                 model,
@@ -88,7 +106,7 @@ export async function chatWithTools({
             });
         default:
             // Fallback: providers not supporting tools just use regular chat
-            return chatWithModel({ provider, model, messages, systemPrompt, apiKey, thinking, temperature, ollamaBaseUrl, localServerUrl });
+            return chatWithModel({ provider, model, messages, systemPrompt, apiKey, thinking, temperature, ollamaBaseUrl, lmStudioBaseUrl, localServerUrl });
     }
 }
 

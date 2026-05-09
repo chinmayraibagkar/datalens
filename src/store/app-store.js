@@ -115,6 +115,15 @@ export const useAppStore = create(
             },
             setOllamaModels: (models) => set({ ollamaModels: models }),
 
+            // LM Studio config
+            lmStudioBaseUrl: 'http://localhost:1234',
+            lmStudioModels: [],
+            setLmStudioBaseUrl: (url) => {
+                set({ lmStudioBaseUrl: url });
+                get()._syncSettings();
+            },
+            setLmStudioModels: (models) => set({ lmStudioModels: models }),
+
             // Local server config
             localServerUrl: 'http://localhost:8080/v1/messages',
             setLocalServerUrl: (url) => {
@@ -296,6 +305,7 @@ export const useAppStore = create(
                     systemPrompt: state.systemPrompt,
                     temperature: state.temperature,
                     ollamaBaseUrl: state.ollamaBaseUrl,
+                    lmStudioBaseUrl: state.lmStudioBaseUrl,
                     localServerUrl: state.localServerUrl,
                     bqProjectId: state.bqProjectId,
                     googleAdsConfig: state.googleAdsConfig,
@@ -319,6 +329,7 @@ export const useAppStore = create(
                         if (settings.systemPrompt) updates.systemPrompt = settings.systemPrompt;
                         if (settings.temperature !== undefined) updates.temperature = settings.temperature;
                         if (settings.ollamaBaseUrl) updates.ollamaBaseUrl = settings.ollamaBaseUrl;
+                        if (settings.lmStudioBaseUrl) updates.lmStudioBaseUrl = settings.lmStudioBaseUrl;
                         if (settings.localServerUrl) updates.localServerUrl = settings.localServerUrl;
                         if (settings.bqProjectId) updates.bqProjectId = settings.bqProjectId;
                         if (settings.googleAdsConfig) updates.googleAdsConfig = { ...get().googleAdsConfig, ...settings.googleAdsConfig };
@@ -365,6 +376,8 @@ export const useAppStore = create(
                 temperature: state.temperature,
                 ollamaBaseUrl: state.ollamaBaseUrl,
                 ollamaModels: state.ollamaModels,
+                lmStudioBaseUrl: state.lmStudioBaseUrl,
+                lmStudioModels: state.lmStudioModels,
                 localServerUrl: state.localServerUrl,
                 bqProjectId: state.bqProjectId,
                 googleAdsConfig: state.googleAdsConfig,

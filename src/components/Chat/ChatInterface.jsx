@@ -34,6 +34,8 @@ export default function ChatInterface() {
         ollamaBaseUrl,
         localServerUrl,
         ollamaModels,
+        lmStudioBaseUrl,
+        lmStudioModels,
         openRouterModels,
         bqProjectId,
         selectedTables,
@@ -51,7 +53,7 @@ export default function ChatInterface() {
     } = useAppStore();
 
     const conv = getActiveConversation();
-    const allExtraModels = [...ollamaModels, ...openRouterModels];
+    const allExtraModels = [...ollamaModels, ...lmStudioModels, ...openRouterModels];
     const currentModel = getModelById(selectedModel, allExtraModels);
 
     const availableModels = useCallback(() => {
@@ -62,9 +64,10 @@ export default function ChatInterface() {
         if (apiKeys.grok) models.push(...getModelsByProvider('grok'));
         if (apiKeys.openrouter && openRouterModels.length > 0) models.push(...openRouterModels);
         if (ollamaModels.length > 0) models.push(...ollamaModels);
+        if (lmStudioModels.length > 0) models.push(...lmStudioModels);
         models.push(...getModelsByProvider('local-server'));
         return models;
-    }, [apiKeys, ollamaModels, openRouterModels]);
+    }, [apiKeys, ollamaModels, lmStudioModels, openRouterModels]);
 
     // Auto-correct selected model if it doesn't exist in available models
     // This fixes the visual desync where the dropdown shows one model but the
@@ -252,6 +255,7 @@ export default function ChatInterface() {
                     thinkingEnabled,
                     temperature,
                     ollamaBaseUrl,
+                    lmStudioBaseUrl,
                     localServerUrl,
                     bqAccessToken: session?.accessToken || '',
                     bqProjectId,
@@ -330,6 +334,7 @@ export default function ChatInterface() {
                     thinkingEnabled: false,
                     temperature,
                     ollamaBaseUrl,
+                    lmStudioBaseUrl,
                     localServerUrl,
                     bqAccessToken: session?.accessToken || '',
                     bqProjectId,
@@ -486,7 +491,9 @@ export default function ChatInterface() {
                                 const provModels =
                                     key === 'ollama'
                                         ? ollamaModels
-                                        : key === 'openrouter'
+                                        : key === 'lmstudio'
+                                            ? lmStudioModels
+                                            : key === 'openrouter'
                                             ? openRouterModels
                                             : models.filter((m) => m.provider === key);
                                 if (provModels.length === 0) return null;

@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/app-store';
 import { MODEL_PROVIDERS, formatINR, formatTokens } from '@/services/llm/model-registry';
 import { signOutUser } from '@/services/firebase';
 import { fetchOpenRouterModels } from '@/services/llm/providers/openrouter';
+import { listLMStudioModels, loadLMStudioModel, unloadLMStudioModel } from '@/services/llm/providers/lmstudio';
 import toast from 'react-hot-toast';
 
 const TABS = [
@@ -24,6 +25,9 @@ export default function SettingsPage() {
     const [orSearch, setOrSearch] = useState('');
     const [orLoading, setOrLoading] = useState(false);
     const [localDocsOpen, setLocalDocsOpen] = useState(false);
+    const [lmsLoading, setLmsLoading] = useState(false);
+    const [lmsLoadingModel, setLmsLoadingModel] = useState(null);
+    const [lmsUnloadingModel, setLmsUnloadingModel] = useState(null);
 
     const {
         apiKeys,
@@ -50,6 +54,10 @@ export default function SettingsPage() {
         setOpenRouterModels,
         openRouterAllModels,
         setOpenRouterAllModels,
+        lmStudioBaseUrl,
+        setLmStudioBaseUrl,
+        lmStudioModels,
+        setLmStudioModels,
         firebaseUser,
     } = useAppStore();
 
@@ -125,6 +133,52 @@ export default function SettingsPage() {
             toast.success(`Found ${models.length} Ollama models`);
         } catch (err) {
             toast.error(`Ollama connection failed: ${err.message}`);
+        }
+    };
+
+    // ─── LM Studio model management ───
+    const handleFetchLMStudioModels = async () => {
+        setLmsLoading(true);
+        try {
+            const models = await listLMStudioModels(lmStudioBaseUrl);
+            setLmStudioModels(models);
+            const loadedCount = models.filter(m => m.isLoaded).length;
+            toast.success(`Found ${models.length} LM Studio models (${loadedCount} loaded)`);
+        } catch (err) {
+            toast.error(`LM Studio connection failed: ${err.message}`);
+        } finally {
+            setLmsLoading(false);
+        }
+    };
+
+    const handleLoadLMStudioModel = async (model) => {
+        setLmsLoadingModel(model.id);
+        try {
+            await loadLMStudioModel(lmStudioBaseUrl, model.id);
+            toast.success(`Loaded "${model.name}" successfully`);
+            // Refresh model list to update loaded state
+            const models = await listLMStudioModels(lmStudioBaseUrl);
+            setLmStudioModels(models);
+        } catch (err) {
+            toast.error(`Failed to load model: ${err.message}`);
+        } finally {
+            setLmsLoadingModel(null);
+        }
+    };
+
+    const handleUnloadLMStudioModel = async (model) => {
+        setLmsUnloadingModel(model.id);
+        try {
+            const instanceId = model.loadedInstanceId || model.id;
+            await unloadLMStudioModel(lmStudioBaseUrl, instanceId);
+            toast.success(`Ejected "${model.name}" — RAM freed`);
+            // Refresh model list to update loaded state
+            const models = await listLMStudioModels(lmStudioBaseUrl);
+            setLmStudioModels(models);
+        } catch (err) {
+            toast.error(`Failed to eject model: ${err.message}`);
+        } finally {
+            setLmsUnloadingModel(null);
         }
     };
 
@@ -224,7 +278,7 @@ export default function SettingsPage() {
 
     return (
         <div className="settings-page">
-            <h1>⚙️ Settings <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--accent-primary)', verticalAlign: 'middle' }}>v0.5</span></h1>
+            <h1>⚙️ Settings <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--accent-primary)', verticalAlign: 'middle' }}>v0.6</span></h1>
 
             <div className="settings-tabs">
                 {TABS.map((tab) => (
@@ -317,6 +371,124 @@ export default function SettingsPage() {
                                         <span key={m.id} className="status-badge success">
                                             {m.name}
                                         </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ─── LM Studio Section ─── */}
+                    <div className="settings-section">
+                        <h2>🧪 LM Studio</h2>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                            Connect to your local LM Studio instance. Load, unload, and switch between models to manage RAM.
+                        </p>
+                        <div className="form-group">
+                            <label className="form-label">Base URL</label>
+                            <div className="form-input-group">
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={lmStudioBaseUrl}
+                                    onChange={(e) => setLmStudioBaseUrl(e.target.value)}
+                                    placeholder="http://localhost:1234"
+                                />
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleFetchLMStudioModels}
+                                    disabled={lmsLoading}
+                                >
+                                    {lmsLoading ? '⏳ Fetching...' : 'Fetch Models'}
+                                </button>
+                            </div>
+                        </div>
+                        {lmStudioModels.length > 0 && (
+                            <div style={{ marginTop: '16px' }}>
+                                <label className="form-label">Available Models ({lmStudioModels.length})</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {lmStudioModels.map((m) => (
+                                        <div
+                                            key={m.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '10px 14px',
+                                                borderRadius: 'var(--radius-md)',
+                                                border: `1px solid ${m.isLoaded ? 'rgba(0, 212, 170, 0.3)' : 'var(--border-color)'}`,
+                                                background: m.isLoaded ? 'rgba(0, 212, 170, 0.06)' : 'var(--bg-card)',
+                                                transition: 'all 0.2s',
+                                            }}
+                                        >
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{m.name}</span>
+                                                    {m.isLoaded && (
+                                                        <span style={{
+                                                            fontSize: '0.65rem',
+                                                            padding: '2px 8px',
+                                                            borderRadius: '4px',
+                                                            background: 'rgba(0, 212, 170, 0.15)',
+                                                            color: '#00D4AA',
+                                                            fontWeight: 600,
+                                                        }}>
+                                                            ● LOADED
+                                                        </span>
+                                                    )}
+                                                    {m.supportsTools && (
+                                                        <span style={{
+                                                            fontSize: '0.65rem',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '4px',
+                                                            background: 'rgba(16,185,129,0.15)',
+                                                            color: '#10b981',
+                                                        }}>🔧 Tools</span>
+                                                    )}
+                                                    {m.hasVision && (
+                                                        <span style={{
+                                                            fontSize: '0.65rem',
+                                                            padding: '2px 6px',
+                                                            borderRadius: '4px',
+                                                            background: 'rgba(99,102,241,0.15)',
+                                                            color: '#6366f1',
+                                                        }}>👁️ Vision</span>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                    {m.publisher && <span>{m.publisher}</span>}
+                                                    {m.paramsString && <span>{m.paramsString} params</span>}
+                                                    {m.quantization && <span>{m.quantization}</span>}
+                                                    {m.contextWindow && <span>{formatTokens(m.contextWindow)} ctx</span>}
+                                                    {m.isLoaded && m.loadedContextLength && (
+                                                        <span style={{ color: '#00D4AA' }}>Active: {formatTokens(m.loadedContextLength)} ctx</span>
+                                                    )}
+                                                    {m.sizeBytes > 0 && (
+                                                        <span>{(m.sizeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '12px' }}>
+                                                {m.isLoaded ? (
+                                                    <button
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => handleUnloadLMStudioModel(m)}
+                                                        disabled={lmsUnloadingModel === m.id}
+                                                        style={{ fontSize: '0.75rem' }}
+                                                    >
+                                                        {lmsUnloadingModel === m.id ? '⏳ Ejecting...' : '⏏️ Eject'}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="btn btn-primary btn-sm"
+                                                        onClick={() => handleLoadLMStudioModel(m)}
+                                                        disabled={lmsLoadingModel === m.id}
+                                                        style={{ fontSize: '0.75rem' }}
+                                                    >
+                                                        {lmsLoadingModel === m.id ? '⏳ Loading...' : '▶️ Load'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
